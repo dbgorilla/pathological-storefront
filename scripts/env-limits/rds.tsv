@@ -1,0 +1,15 @@
+# Defects that cannot exist on managed PostgreSQL, because creating them needs
+# a real superuser and no managed service hands one out. AWS is explicit that
+# rds_superuser is NOSUPERUSER on both RDS and Aurora; the true superuser is an
+# internal service role no customer can connect as.
+#
+# These are not failures and not fixture bugs. The fixture is correct and the
+# environment cannot host them, so the verifier reports them as n/a and leaves
+# them out of its totals rather than counting them wrong.
+#
+# Format: id<TAB>reason
+#
+# Used as:  VERIFY_ENV=rds ./scripts/verify-ground-truth.sh
+fk-triggers-disabled	ALTER TABLE ... DISABLE TRIGGER ALL turns off the internal foreign-key triggers, which needs a real superuser. session_replication_role = replica suppresses firing for one session but never sets tgenabled, which is what the detection counts.
+function-marked-leakproof	CREATE FUNCTION ... LEAKPROOF is a superuser-only attribute, so the database has no LEAKPROOF function to find.
+invalid-unique-index-left-by-a-failed-concurrent-build	The state a failed CREATE INDEX CONCURRENTLY leaves behind cannot be reached inside a transaction, so the fixture writes indisvalid directly in pg_index, and writing a system catalogue needs a real superuser. The index stays valid here, and the 30 duplicate agent accounts it was meant to let through are skipped with it.

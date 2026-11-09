@@ -1,0 +1,57 @@
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: crossriver
+      POSTGRES_PASSWORD: crossriver
+      POSTGRES_DB: crossriver
+    ports:
+      - "${PGPORT_HOST:-55432}:5432"
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=all
+      - -c
+      - track_io_timing=on
+      # Left at the default 4MB on purpose. Several of the documented defects
+      # are only visible because sorts spill to disk at this setting.
+      - -c
+      - work_mem=4MB
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crossriver -d crossriver"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    # PostgreSQL 18 images keep data in a major-version subdirectory, so the
+    # mount goes one level up from the 17-and-earlier convention.
+    volumes:
+      - pgdata:/var/lib/postgresql
+
+  flyway:
+    image: flyway/flyway:11
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Flyway 11 ships Temurin 21, which SIGSEGVs intermittently in this
+      # container under class-data sharing. Turning sharing off and staying on
+      # the C1 compiler costs a second or two and makes the run repeatable.
+      JAVA_ARGS: "-Xshare:off -XX:TieredStopAtLevel=1"
+    volumes:
+      - ./migrations:/flyway/sql:ro
+    # Pinned to public because one of the defects moves the database's default
+    # search_path to storefront first, and Flyway looks for its history table in
+    # the default schema. Without this, any run after the first fails.
+    command: >
+      -url=jdbc:postgresql://db:5432/crossriver
+      -defaultSchema=public
+      -user=crossriver
+      -password=crossriver
+      -connectRetries=30
+      -locations=filesystem:/flyway/sql
+      migrate
+
+volumes:
+  pgdata:
